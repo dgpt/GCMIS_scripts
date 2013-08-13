@@ -13,6 +13,19 @@ import sys
 TEMP_PASSWD = "gc"
 DEBUG = False       # True to prevent completion message and screen clear at end
 
+
+def topout(screen, msg = ""):
+    screen.Send("TOP\rINFORM\rTOP\rINFORM\r")
+    if msg != "":
+        screen.WaitForString("GCM>")
+        screen.Send(msg + "\r")
+
+def wait(screen, string = "GCM>", timeout = 0):
+    if timeout > 0:
+        return screen.WaitForString(string, timeout)
+    else:
+        return screen.WaitForString(string)
+
 def main():
     screen = crt.Screen
     dlg = crt.Dialog
@@ -25,17 +38,30 @@ def main():
     userID = dlg.Prompt("Enter user's employee ID")
     if len(str(userID)) != 6:
         sys.exit("Invalid employee ID")
-    resetYesOrNo = dlg.MessageBox("Reset " + userID + "'s password to '" + TEMP_PASSWD + "'?\r(Press No to only unlock)", "Reset and Unlock or Unlock Only?", ICON_WARN | BUTTON_YESNO | DEFBUTTON2)
+
+    # Set up access to DRUM's session to verify LAST4 and pull Employee Name
+    drumTab = crt.GetTab(1)
+    if drumTab.Caption == "DRUM" and drumTab.Session.Connected:
+        drum = drumTab.Screen
+    else:
+        sys.exit("Could not locate DRUM tab or DRUM not connected")
+
+    # Get Employee Name from SY100
+    topout(drum)
+    wait(drum)
+    drum.Send("*SY100\r")
+    wait(drum, "Login Id")
+    drum.Send(userID + "\r")
+    wait(drum, "Cont")
+    employee_name = drum.Get(4, 11, 4, 36)
+    topout(drum)
+
+    resetYesOrNo = dlg.MessageBox("Reset " + userID + "'s password to '" + TEMP_PASSWD + "'?\r\r" +
+                                  employee_name + "\r\r" +
+                                  "(Press No to only unlock)", "Reset and Unlock or Unlock Only?", ICON_WARN | BUTTON_YESNO | DEFBUTTON2)
 
 # Following steps are only relevant if resetting passwd
     if resetYesOrNo == IDYES:
-    # Set up access to DRUM's session to verify LAST4
-        drumTab = crt.GetTab(1)
-        if drumTab.Caption == "DRUM" and drumTab.Session.Connected:
-            drum = drumTab.Screen
-        else:
-            sys.exit("Could not locate DRUM tab or DRUM not connected")
-
     # Verify Last4 of user's social
         drum.Send("TOP\rINFORM\rLAST4\r\r")
         drum.WaitForString("Employee #=")
@@ -48,15 +74,20 @@ def main():
 
     # Change Password to TEMP_PASSWD
         screen.Send("sudo passwd " + userID + "\r")
-        passwdResult = screen.WaitForStrings(["Password:", userID + "'s New password:"], 5)
+        passwdResult = screen.WaitForStrings(["Password:", userID + "'s New password:", "does not exist"], 5)
         if passwdResult == 0:
             sys.exit("Password reset timed out!")
         if passwdResult == 1:
             screen.Send(passwd + "\r")
-            passwdResult2 = screen.WaitForStrings(["Sorry, try again.", userID + "'s New password:"], 5)
+            passwdResult2 = screen.WaitForStrings(["Sorry, try again.", userID + "'s New password:", "does not exist"], 5)
             if passwdResult2 == 1:
                 screen.Send("\r\r\rTOP\rINFORM\r")
                 sys.exit("Incorrect password.")
+            if passwdResult2 == 3:
+                passwdResult = 3
+        if passwdResult == 3:
+            screen.Send("\rTOP\rINFORM\rTOP\rINFORM\r")
+            sys.exit("User " + userID + " does not exist.")
         screen.Send(TEMP_PASSWD + "\r")
         screen.WaitForString(":")
         screen.Send(TEMP_PASSWD + "\r")
