@@ -1,7 +1,8 @@
 # $language = "python"
 # $interface = "1.0"
 
-"""# BUG:
+"""
+# BUG - Fixed:
 GCM>sudo passwd 050913
 Password:
 3004-687 User "050913" does not exist.
